@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Slot = {
   id: string;
@@ -46,7 +46,7 @@ export function BookingClient() {
   }, []);
 
   useEffect(() => {
-    loadSlots();
+    const initialLoad = window.setTimeout(() => loadSlots(), 0);
     const interval = window.setInterval(() => loadSlots(true), 15000);
     const handleVisibility = () => {
       if (document.visibilityState === "visible") loadSlots(true);
@@ -54,19 +54,19 @@ export function BookingClient() {
 
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
+      window.clearTimeout(initialLoad);
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [loadSlots]);
 
-  const updateLabel = useMemo(() => {
-    if (!data?.updatedAt) return "";
-    return new Intl.DateTimeFormat("zh-HK", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(new Date(data.updatedAt));
-  }, [data?.updatedAt]);
+  const updateLabel = data?.updatedAt
+    ? new Intl.DateTimeFormat("zh-HK", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(new Date(data.updatedAt))
+    : "";
 
   return (
     <div className="app-shell">

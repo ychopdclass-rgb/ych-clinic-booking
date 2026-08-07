@@ -1,100 +1,141 @@
-# vinext-starter
+# YCH Clinic Booking
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+An open-source, mobile-friendly booking page for showing live class vacancies
+from Google Sheets and sending visitors to a prefilled Google Form.
 
-## Prerequisites
+[View the public demo](https://ych-back-class-booking.tony1226.chatgpt.site/)
 
-- Node.js `>=22.13.0`
+## What it does
 
-## Quick Start
+- reads live availability from a public Google Sheet
+- refreshes available slots every 15 seconds
+- hides full or manually closed slots
+- opens a Google Form with the selected date and time already filled in
+- works without visitor accounts or ChatGPT sign-in
+- runs as a Next.js-compatible app on vinext and Cloudflare Workers
+
+## How the booking flow works
+
+1. Staff maintains class rows in the `課堂資料` sheet.
+2. The app reads the sheet through Google's read-only Visualization API.
+3. A visitor selects an available slot and completes the prefilled Google Form.
+4. The form response sheet increases `Currently Booked` with a `COUNTIF` formula.
+5. When `Spaces Remaining` becomes zero, the app stops showing that slot.
+
+No booking write API or service-account credential is required. Google Forms
+records the response and Google Sheets formulas update availability.
+
+## Google Sheet setup
+
+Create a tab named `課堂資料` with these columns in row 1:
+
+| Column | Heading | Example |
+| --- | --- | --- |
+| A | Class Name | 背部運動班 |
+| B | Date and Time | 2026年8月12日 星期三 10:00–11:00 |
+| C | Max Capacity | 8 |
+| D | Currently Booked | formula below |
+| E | Spaces Remaining | formula below |
+| F | Record ID | back-2026-08-12-1000 |
+| G | Form Link | prefilled form formula below |
+
+Connect the Google Form to a response tab in the same spreadsheet. If the
+selected time is saved in column E of a response tab named `預約紀錄1`, use:
+
+```gs
+=COUNTIF('預約紀錄1'!$E$2:$E,B2)
+```
+
+If old and new form versions store the time in columns E and F, count both:
+
+```gs
+=COUNTIF('預約紀錄1'!$E$2:$E,B2)+COUNTIF('預約紀錄1'!$F$2:$F,B2)
+```
+
+For remaining spaces:
+
+```gs
+=MAX(0,C2-D2)
+```
+
+In Google Forms, choose **More → Get pre-filled link**, fill the time question
+once, and copy the generated URL. Its query string contains an ID such as
+`entry.273583068`. Build column G with that ID:
+
+```gs
+="https://docs.google.com/forms/d/e/YOUR_PUBLIC_FORM_ID/viewform?usp=pp_url&entry.YOUR_ENTRY_ID="&ENCODEURL(B2)
+```
+
+Share only the `課堂資料` sheet data publicly: the spreadsheet must be readable
+by **Anyone with the link** for this credential-free approach. Never place names,
+phone numbers, medical information, or form responses on that public tab.
+
+To close a slot manually, set its remaining capacity to `0` (or clear its form
+link). To reopen it, restore a positive remaining capacity and the form link.
+
+## Run locally
+
+Requirements: Node.js 22.13 or newer.
 
 ```bash
+git clone https://github.com/YOUR_GITHUB_USERNAME/ych-clinic-booking.git
+cd ych-clinic-booking
 npm install
+cp .env.example .env.local
 npm run dev
-npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+Put your spreadsheet ID and tab name in `.env.local`. The spreadsheet ID is the
+text between `/d/` and `/edit` in its Google Sheets URL. The included defaults
+power the public demo, so the app also works immediately after cloning.
 
-## Included Shape
+Before publishing a fork, replace the demo branding and fallback Sheet ID in
+`app/api/slots/route.ts`.
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+## Publish publicly
 
-## Workspace Auth Headers
+### Option A: ChatGPT Sites
 
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
+Open the cloned folder in Codex, ask it to create or connect a new Site, then ask:
 
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
+> Publish this Site and make access public for anyone on the internet.
 
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
+The tracked `.openai/hosting.json` contains the demo project's identifier; it is
+not a credential. Remove its `project_id` before connecting a fork to your own
+Site so you do not target the demo project.
 
-Treat the full name as optional and fall back to email when it is absent:
+### Option B: Cloudflare Workers
 
-```tsx
-import { headers } from "next/headers";
+Sign in to Cloudflare through Wrangler, create a production environment file,
+and deploy:
 
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```bash
+npx wrangler login
+cp .env.example .env.production.local
+# Edit .env.production.local with your public Sheet ID and tab name.
+npm run deploy:cloudflare
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+Wrangler prints the public `workers.dev` URL after a successful deployment. You
+can attach a custom domain from the Worker settings in Cloudflare.
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+## Commands
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+```bash
+npm run dev               # local development
+npm run build             # production build
+npm test                  # build and verify server-rendered output
+npm run lint              # lint source code
+npm run deploy:cloudflare # build and deploy with Wrangler
+```
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+## Security and booking limits
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
+This lightweight design is appropriate for small classes but does not provide an
+atomic seat lock. Two people submitting the final place at the same moment can
+both reach the form before the sheet refreshes. For strict capacity enforcement,
+replace the Google Form flow with a server-side booking transaction and database.
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
+## License
 
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+[MIT](LICENSE) — use, modify, and redistribute the project with attribution.

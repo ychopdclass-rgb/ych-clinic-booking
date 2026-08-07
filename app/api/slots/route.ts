@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
-const SHEET_ID = "1TEYqAojuGre9Zht_Ix0FqTTkD2_uwcjRWocOgGhT1fA";
-const SHEET_NAME = "課堂資料";
+// These values are public identifiers, not credentials. Forks can override them
+// with environment variables without changing the source code.
+const SHEET_ID =
+  process.env.GOOGLE_SHEET_ID?.trim() ||
+  "1TEYqAojuGre9Zht_Ix0FqTTkD2_uwcjRWocOgGhT1fA";
+const SHEET_NAME = process.env.GOOGLE_SHEET_NAME?.trim() || "課堂資料";
 
 type GoogleCell = { v?: string | number; f?: string } | null;
 
