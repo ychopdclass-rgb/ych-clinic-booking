@@ -119,11 +119,19 @@ npm run deploy:cloudflare
 Wrangler prints the public `workers.dev` URL after a successful deployment. You
 can attach a custom domain from the Worker settings in Cloudflare.
 
+### Option C: Vercel
+
+Import the GitHub repository into Vercel with the **Next.js** framework preset.
+The included `vercel.json` automatically selects the standard Next.js build,
+while the existing `npm run build` command remains available for Sites and
+Cloudflare Workers.
+
 ## Commands
 
 ```bash
 npm run dev               # local development
 npm run build             # production build
+npm run build:vercel      # Vercel-compatible Next.js build
 npm test                  # build and verify server-rendered output
 npm run lint              # lint source code
 npm run deploy:cloudflare # build and deploy with Wrangler
