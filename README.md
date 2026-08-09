@@ -78,7 +78,7 @@ link). To reopen it, restore a positive remaining capacity and the form link.
 Requirements: Node.js 22.13 or newer.
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USERNAME/ych-clinic-booking.git
+git clone https://github.com/tony20031226/ych-clinic-booking.git
 cd ych-clinic-booking
 npm install
 cp .env.example .env.local
