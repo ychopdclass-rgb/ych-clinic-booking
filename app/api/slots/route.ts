@@ -16,7 +16,10 @@ type GoogleTable = {
 };
 
 function value(cell: GoogleCell): string | number {
-  return cell?.v ?? cell?.f ?? "";
+  // Google Visualization serializes real date/time cells in `v` as strings
+  // such as `Date(2026,7,10,10,30,0)`. Prefer the sheet's formatted value so
+  // the website, form prefill, and booking records all use the same label.
+  return cell?.f ?? cell?.v ?? "";
 }
 
 export async function GET() {
