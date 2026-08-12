@@ -414,9 +414,11 @@ a:focus-visible {
   justify-content: space-between;
   gap: 18px;
   padding: 13px 16px;
+  border: 0;
   border-radius: 11px;
   background: var(--blue);
   color: #fff;
+  cursor: pointer;
   font-size: 13px;
   font-weight: 720;
   text-decoration: none;
@@ -428,6 +430,89 @@ a:focus-visible {
   background: var(--blue-deep);
   box-shadow: 0 10px 22px rgba(47, 95, 208, 0.28);
   transform: translateY(-1px);
+}
+
+.notice-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(17, 27, 49, 0.58);
+  backdrop-filter: blur(4px);
+}
+
+.notice-dialog {
+  width: min(100%, 470px);
+  padding: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(17, 27, 49, 0.24);
+}
+
+.notice-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 16px;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff2d9;
+  color: #a76300;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.notice-dialog h2 {
+  margin: 0 0 16px;
+  font-size: 22px;
+}
+
+.notice-dialog p {
+  margin: 10px 0 0;
+  color: #596273;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.notice-dialog .notice-lead {
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.notice-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 26px;
+}
+
+.notice-actions button {
+  min-height: 44px;
+  padding: 0 17px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.notice-back {
+  border: 1px solid #d9dde5;
+  background: #fff;
+  color: #596273;
+}
+
+.notice-continue {
+  border: 1px solid var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+
+.notice-actions button:focus-visible {
+  outline: 3px solid rgba(75, 125, 242, 0.25);
+  outline-offset: 2px;
 }
 
 .empty-state {
@@ -596,6 +681,18 @@ footer {
 
   .book-button {
     grid-column: auto;
+  }
+
+  .notice-dialog {
+    padding: 24px 20px;
+  }
+
+  .notice-actions {
+    flex-direction: column-reverse;
+  }
+
+  .notice-actions button {
+    width: 100%;
   }
 }
 
