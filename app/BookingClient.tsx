@@ -29,6 +29,7 @@ export function BookingClient() {
   const [data, setData] = useState<SlotsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [pendingFormUrl, setPendingFormUrl] = useState("");
 
   const loadSlots = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -59,6 +60,17 @@ export function BookingClient() {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [loadSlots]);
+
+  useEffect(() => {
+    if (!pendingFormUrl) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPendingFormUrl("");
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [pendingFormUrl]);
 
   const updateLabel = data?.updatedAt
     ? new Intl.DateTimeFormat("zh-HK", {
@@ -181,10 +193,14 @@ export function BookingClient() {
                     <p>已有 {slot.currentlyBooked} 人預約</p>
                   </div>
 
-                  <a className="book-button" href={slot.formUrl}>
-                    預約此時段
+                  <button
+                    className="book-button"
+                    type="button"
+                    onClick={() => setPendingFormUrl(slot.formUrl)}
+                  >
+                    申請此時段
                     <span aria-hidden="true">→</span>
-                  </a>
+                  </button>
                 </div>
               </article>
             );
@@ -196,6 +212,39 @@ export function BookingClient() {
           名額資料每 15 秒自動更新
         </footer>
       </main>
+
+      {pendingFormUrl && (
+        <div className="notice-backdrop" role="presentation" onMouseDown={() => setPendingFormUrl("")}>
+          <section
+            className="notice-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="booking-notice-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="notice-icon" aria-hidden="true">!</div>
+            <h2 id="booking-notice-title">預約申請提示</h2>
+            <p className="notice-lead">此申請並不代表預約已確認。</p>
+            <p>
+              申請成功後，您將透過 <strong>HA Go</strong> 收到正式預約通知，請留意及查閱 HA Go。
+            </p>
+            <p>如未收到 HA Go 通知，請勿視作預約成功。</p>
+            <div className="notice-actions">
+              <button className="notice-back" type="button" onClick={() => setPendingFormUrl("")}>
+                返回
+              </button>
+              <button
+                className="notice-continue"
+                type="button"
+                autoFocus
+                onClick={() => window.location.assign(pendingFormUrl)}
+              >
+                我明白並繼續
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
