@@ -59,7 +59,7 @@ export async function GET() {
           formUrl: String(value(cells[6]) || "").trim(),
         };
       })
-      .filter((slot) => slot.dateTime && slot.formUrl && slot.spacesRemaining > 0);
+      .filter((slot) => slot.dateTime && slot.formUrl && slot.maxCapacity > 0);
 
     return NextResponse.json(
       { slots, updatedAt: new Date().toISOString() },
