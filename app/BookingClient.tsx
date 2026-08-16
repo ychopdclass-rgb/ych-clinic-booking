@@ -17,6 +17,60 @@ type SlotsResponse = {
   updatedAt: string;
 };
 
+type SlotGroup = {
+  dateLabel: string;
+  weekdayLabel: string;
+  slots: Array<Slot & { timeLabel: string }>;
+};
+
+function splitDateTime(dateTime: string) {
+  const match = dateTime.trim().match(/^(\d{1,2}\/\d{1,2}(?:\/\d{4})?)(?:\s+(.+))?$/);
+
+  return {
+    dateLabel: match?.[1] ?? dateTime,
+    timeLabel: match?.[2]?.trim() || "時間待定",
+  };
+}
+
+function getWeekdayLabel(dateLabel: string) {
+  const parts = dateLabel.split("/").map(Number);
+  if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) return "";
+
+  const [day, month, year] = parts;
+  const date = new Date(year, month - 1, day);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("zh-HK", { weekday: "long" }).format(date);
+}
+
+function getLessonLabel(className: string) {
+  const match = className.match(/第\s*([0-9一二三四五六七八九十]+)\s*([課堂])/);
+  return match ? `第${match[1]}${match[2]}` : "背部運動班";
+}
+
+function groupSlotsByDate(slots: Slot[]): SlotGroup[] {
+  const groups = new Map<string, SlotGroup>();
+
+  slots.forEach((slot) => {
+    const { dateLabel, timeLabel } = splitDateTime(slot.dateTime);
+    const existing = groups.get(dateLabel);
+    const groupedSlot = { ...slot, timeLabel };
+
+    if (existing) {
+      existing.slots.push(groupedSlot);
+      return;
+    }
+
+    groups.set(dateLabel, {
+      dateLabel,
+      weekdayLabel: getWeekdayLabel(dateLabel),
+      slots: [groupedSlot],
+    });
+  });
+
+  return Array.from(groups.values());
+}
+
 function CalendarIcon() {
   return <span aria-hidden="true">日</span>;
 }
@@ -79,6 +133,7 @@ export function BookingClient() {
         hour12: false,
       }).format(new Date(data.updatedAt))
     : "";
+  const slotGroups = groupSlotsByDate(data?.slots ?? []);
 
   return (
     <div className="app-shell">
@@ -119,9 +174,7 @@ export function BookingClient() {
             <div>
               <div className="heading-line">
                 <h2 id="available-heading">可預約時段</h2>
-                {!loading && !error && (
-                  <span className="count-pill">{data?.slots.length ?? 0}</span>
-                )}
+                {!loading && !error && <span className="count-pill">{data?.slots.length ?? 0}</span>}
               </div>
               <p>{updateLabel ? `最後更新 ${updateLabel}` : "正在讀取即時名額"}</p>
             </div>
@@ -148,7 +201,7 @@ export function BookingClient() {
             </div>
           )}
 
-          {!loading && !error && data?.slots.length === 0 && (
+          {!loading && !error && slotGroups.length === 0 && (
             <div className="empty-state">
               <span className="empty-symbol">✓</span>
               <h3>暫時未有可預約時段</h3>
@@ -156,53 +209,83 @@ export function BookingClient() {
             </div>
           )}
 
-          {!loading && !error && data?.slots.map((slot) => {
-            const filled = slot.maxCapacity > 0
-              ? Math.min(100, Math.max(0, (slot.currentlyBooked / slot.maxCapacity) * 100))
-              : 0;
+          {!loading && !error && slotGroups.length > 0 && (
+            <div className="availability-legend" aria-label="名額狀態說明">
+              <span><i className="legend-dot available" />可預約</span>
+              <span><i className="legend-dot last-place" />尚餘 1 位</span>
+              <span><i className="legend-dot full" />已滿</span>
+            </div>
+          )}
+
+          {!loading && !error && slotGroups.map((group) => {
+            const availableCount = group.slots.filter((slot) => slot.spacesRemaining > 0).length;
 
             return (
-              <article className="slot-card" key={slot.id}>
-                <div className="slot-topline">
-                  <div>
-                    <p className="slot-kicker">背部運動班</p>
-                    <h3>{slot.className || "背部運動班"}</h3>
-                  </div>
-                  <span className="available-badge">
-                    <span /> 尚有名額
-                  </span>
-                </div>
-
-                <div className="slot-body">
-                  <div className="slot-date">
+              <section className="day-card" key={group.dateLabel}>
+                <div className="day-heading">
+                  <div className="day-title">
                     <div className="date-icon"><CalendarIcon /></div>
-                    <div>
-                      <span>日期及時間</span>
-                      <strong>{slot.dateTime}</strong>
-                    </div>
+                    <h3>
+                      {group.dateLabel}
+                      {group.weekdayLabel && <span>（{group.weekdayLabel}）</span>}
+                    </h3>
                   </div>
-
-                  <div className="capacity-block">
-                    <div className="capacity-label">
-                      <span>剩餘名額</span>
-                      <strong>{slot.spacesRemaining}<small> / {slot.maxCapacity}</small></strong>
-                    </div>
-                    <div className="progress-track" aria-hidden="true">
-                      <span style={{ width: `${filled}%` }} />
-                    </div>
-                    <p>已有 {slot.currentlyBooked} 人預約</p>
-                  </div>
-
-                  <button
-                    className="book-button"
-                    type="button"
-                    onClick={() => setPendingFormUrl(slot.formUrl)}
-                  >
-                    申請此時段
-                    <span aria-hidden="true">→</span>
-                  </button>
+                  <p><strong>{availableCount}</strong> / {group.slots.length} 個時段可預約</p>
                 </div>
-              </article>
+
+                <div className="day-slots">
+                  {group.slots.map((slot) => {
+                    const isFull = slot.spacesRemaining <= 0;
+                    const isLastPlace = slot.spacesRemaining === 1;
+                    const statusClass = isFull ? "full" : isLastPlace ? "last-place" : "available";
+                    const statusLabel = isFull ? "已滿" : `尚餘 ${slot.spacesRemaining} 位`;
+                    const filled = slot.maxCapacity > 0
+                      ? Math.min(100, Math.max(0, (slot.currentlyBooked / slot.maxCapacity) * 100))
+                      : 0;
+
+                    return (
+                      <article
+                        className={`day-slot ${isFull ? "is-full" : ""} ${isLastPlace ? "is-last-place" : ""}`}
+                        key={slot.id}
+                      >
+                        <div className="slot-primary">
+                          <span className="lesson-badge">{getLessonLabel(slot.className)}</span>
+                          <div>
+                            <strong>{slot.timeLabel}</strong>
+                            <span>背部運動班</span>
+                          </div>
+                        </div>
+
+                        <div className="compact-capacity">
+                          <div className="compact-capacity-line">
+                            <span className={`capacity-status ${statusClass}`}>
+                              <i />{statusLabel}
+                            </span>
+                            <strong>{slot.spacesRemaining}<small> / {slot.maxCapacity}</small></strong>
+                          </div>
+                          <div className="progress-track" aria-hidden="true">
+                            <span style={{ width: `${filled}%` }} />
+                          </div>
+                          <p>已有 {slot.currentlyBooked} 人預約</p>
+                        </div>
+
+                        <button
+                          className="book-button compact-book-button"
+                          type="button"
+                          disabled={isFull}
+                          aria-label={isFull
+                            ? `${group.dateLabel} ${slot.timeLabel} ${getLessonLabel(slot.className)}已滿`
+                            : `申請${group.dateLabel} ${slot.timeLabel} ${getLessonLabel(slot.className)}`}
+                          onClick={() => setPendingFormUrl(slot.formUrl)}
+                        >
+                          {isFull ? "已滿" : "申請此時段"}
+                          {!isFull && <span aria-hidden="true">→</span>}
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
             );
           })}
         </section>
