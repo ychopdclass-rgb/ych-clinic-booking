@@ -22,6 +22,120 @@ function value(cell: GoogleCell): string | number {
   return cell?.f ?? cell?.v ?? "";
 }
 
+const HONG_KONG_UTC_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+function toHongKongTimestamp(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+): number | null {
+  const timestamp =
+    Date.UTC(year, month - 1, day, hour, minute) - HONG_KONG_UTC_OFFSET_MS;
+  const localTime = new Date(timestamp + HONG_KONG_UTC_OFFSET_MS);
+
+  // Reject impossible dates instead of allowing JavaScript to roll them over.
+  if (
+    localTime.getUTCFullYear() !== year ||
+    localTime.getUTCMonth() !== month - 1 ||
+    localTime.getUTCDate() !== day ||
+    localTime.getUTCHours() !== hour ||
+    localTime.getUTCMinutes() !== minute
+  ) {
+    return null;
+  }
+
+  return timestamp;
+}
+
+function hour24(rawHour: number, period?: string): number | null {
+  if (!period) return rawHour >= 0 && rawHour <= 23 ? rawHour : null;
+  if (rawHour < 1 || rawHour > 12) return null;
+
+  if (period === "上午" || period.toUpperCase() === "AM") {
+    return rawHour === 12 ? 0 : rawHour;
+  }
+
+  return rawHour === 12 ? 12 : rawHour + 12;
+}
+
+function parseHongKongSlotTimestamp(dateTime: string): number | null {
+  const text = dateTime.trim();
+
+  // Google Sheets' raw date representation uses a zero-based month.
+  const googleDate = text.match(
+    /^Date\((\d{4}),(\d{1,2}),(\d{1,2}),(\d{1,2}),(\d{1,2})/,
+  );
+  if (googleDate) {
+    return toHongKongTimestamp(
+      Number(googleDate[1]),
+      Number(googleDate[2]) + 1,
+      Number(googleDate[3]),
+      Number(googleDate[4]),
+      Number(googleDate[5]),
+    );
+  }
+
+  const dayFirst = text.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s*(上午|下午|AM|PM)?\s*(\d{1,2})[:：](\d{2})/i,
+  );
+  if (dayFirst) {
+    const hour = hour24(Number(dayFirst[5]), dayFirst[4]);
+    return hour === null
+      ? null
+      : toHongKongTimestamp(
+          Number(dayFirst[3]),
+          Number(dayFirst[2]),
+          Number(dayFirst[1]),
+          hour,
+          Number(dayFirst[6]),
+        );
+  }
+
+  const chineseDate = text.match(
+    /^(\d{4})年(\d{1,2})月(\d{1,2})日(?:\s*星期[一二三四五六日天])?\s*(上午|下午|AM|PM)?\s*(\d{1,2})[:：](\d{2})/i,
+  );
+  if (chineseDate) {
+    const hour = hour24(Number(chineseDate[5]), chineseDate[4]);
+    return hour === null
+      ? null
+      : toHongKongTimestamp(
+          Number(chineseDate[1]),
+          Number(chineseDate[2]),
+          Number(chineseDate[3]),
+          hour,
+          Number(chineseDate[6]),
+        );
+  }
+
+  const yearFirst = text.match(
+    /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s*(上午|下午|AM|PM)?\s*(\d{1,2})[:：](\d{2})/i,
+  );
+  if (yearFirst) {
+    const hour = hour24(Number(yearFirst[5]), yearFirst[4]);
+    return hour === null
+      ? null
+      : toHongKongTimestamp(
+          Number(yearFirst[1]),
+          Number(yearFirst[2]),
+          Number(yearFirst[3]),
+          hour,
+          Number(yearFirst[6]),
+        );
+  }
+
+  return null;
+}
+
+function isUpcomingSlot(dateTime: string, now: number): boolean {
+  const startTime = parseHongKongSlotTimestamp(dateTime);
+
+  // Keep an unfamiliar date format visible so a formatting change in the
+  // spreadsheet cannot accidentally hide every available class.
+  return startTime === null || startTime > now;
+}
+
 export async function GET() {
   try {
     const query = new URLSearchParams({
@@ -42,6 +156,7 @@ export async function GET() {
 
     const payload = JSON.parse(raw.slice(start, end + 1)) as GoogleTable;
     let lastClassName = "";
+    const now = Date.now();
 
     const slots = (payload.table?.rows ?? [])
       .map((row, index) => {
@@ -59,7 +174,13 @@ export async function GET() {
           formUrl: String(value(cells[6]) || "").trim(),
         };
       })
-      .filter((slot) => slot.dateTime && slot.formUrl && slot.maxCapacity > 0);
+      .filter(
+        (slot) =>
+          slot.dateTime &&
+          slot.formUrl &&
+          slot.maxCapacity > 0 &&
+          isUpcomingSlot(slot.dateTime, now),
+      );
 
     return NextResponse.json(
       { slots, updatedAt: new Date().toISOString() },
