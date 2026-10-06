@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 type Slot = {
   id: string;
@@ -21,6 +21,25 @@ type SlotGroup = {
   dateLabel: string;
   weekdayLabel: string;
   slots: Array<Slot & { timeLabel: string }>;
+};
+
+type BookingStep = "notice" | "form" | "success";
+
+type BookingForm = {
+  name: string;
+  phone: string;
+  phya: string;
+};
+
+type BookingResponse = {
+  ok?: boolean;
+  message?: string;
+};
+
+const EMPTY_BOOKING_FORM: BookingForm = {
+  name: "",
+  phone: "",
+  phya: "",
 };
 
 function splitDateTime(dateTime: string) {
@@ -83,7 +102,11 @@ export function BookingClient() {
   const [data, setData] = useState<SlotsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [pendingFormUrl, setPendingFormUrl] = useState("");
+  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const [bookingStep, setBookingStep] = useState<BookingStep>("notice");
+  const [bookingForm, setBookingForm] = useState<BookingForm>(EMPTY_BOOKING_FORM);
+  const [bookingError, setBookingError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const loadSlots = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -116,15 +139,60 @@ export function BookingClient() {
   }, [loadSlots]);
 
   useEffect(() => {
-    if (!pendingFormUrl) return;
+    if (!selectedSlot) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPendingFormUrl("");
+      if (event.key === "Escape" && !submitting) setSelectedSlot(null);
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [pendingFormUrl]);
+  }, [selectedSlot, submitting]);
+
+  const openBooking = (slot: Slot) => {
+    setSelectedSlot(slot);
+    setBookingStep("notice");
+    setBookingForm(EMPTY_BOOKING_FORM);
+    setBookingError("");
+  };
+
+  const closeBooking = () => {
+    if (submitting) return;
+    setSelectedSlot(null);
+    setBookingError("");
+  };
+
+  const submitBooking = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedSlot || submitting) return;
+
+    setSubmitting(true);
+    setBookingError("");
+
+    try {
+      const response = await fetch("/api/book", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...bookingForm,
+          slot: selectedSlot.dateTime,
+        }),
+      });
+      const result = (await response.json()) as BookingResponse;
+
+      if (!response.ok || !result.ok) {
+        setBookingError(result.message || "暫時未能提交預約，請稍後再試。");
+        return;
+      }
+
+      setBookingStep("success");
+      void loadSlots(true);
+    } catch {
+      setBookingError("暫時未能提交預約，請檢查網絡後再試。");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const updateLabel = data?.updatedAt
     ? new Intl.DateTimeFormat("zh-HK", {
@@ -276,7 +344,7 @@ export function BookingClient() {
                           aria-label={isFull
                             ? `${group.dateLabel} ${slot.timeLabel} ${getLessonLabel(slot.className)}已滿`
                             : `申請${group.dateLabel} ${slot.timeLabel} ${getLessonLabel(slot.className)}`}
-                          onClick={() => setPendingFormUrl(slot.formUrl)}
+                          onClick={() => openBooking(slot)}
                         >
                           {isFull ? "已滿" : "申請此時段"}
                           {!isFull && <span aria-hidden="true">→</span>}
@@ -296,35 +364,123 @@ export function BookingClient() {
         </footer>
       </main>
 
-      {pendingFormUrl && (
-        <div className="notice-backdrop" role="presentation" onMouseDown={() => setPendingFormUrl("")}>
+      {selectedSlot && (
+        <div className="notice-backdrop" role="presentation" onMouseDown={closeBooking}>
           <section
-            className="notice-dialog"
+            className={`notice-dialog ${bookingStep === "form" ? "booking-form-dialog" : ""}`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="booking-notice-title"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <div className="notice-icon" aria-hidden="true">!</div>
-            <h2 id="booking-notice-title">預約申請提示</h2>
-            <p className="notice-lead">此申請並不代表預約已確認。</p>
-            <p>
-              申請成功後，您將透過 <strong>HA Go</strong> 收到正式預約通知，請留意及查閱 HA Go。
-            </p>
-            <p>如未收到 HA Go 通知，請勿視作預約成功。</p>
-            <div className="notice-actions">
-              <button className="notice-back" type="button" onClick={() => setPendingFormUrl("")}>
-                返回
-              </button>
-              <button
-                className="notice-continue"
-                type="button"
-                autoFocus
-                onClick={() => window.location.assign(pendingFormUrl)}
-              >
-                我明白並繼續
-              </button>
-            </div>
+            {bookingStep === "notice" && (
+              <>
+                <div className="notice-icon" aria-hidden="true">!</div>
+                <h2 id="booking-notice-title">預約申請提示</h2>
+                <p className="notice-lead">此申請並不代表預約已確認。</p>
+                <p>
+                  每位病人在已預約課堂完結前，只可保留一個課堂申請。
+                </p>
+                <p>
+                  申請成功後，您將透過 <strong>HA Go</strong> 收到正式預約通知，請留意及查閱 HA Go。
+                </p>
+                <p>如未收到 HA Go 通知，請勿視作預約成功。</p>
+                <div className="notice-actions">
+                  <button className="notice-back" type="button" onClick={closeBooking}>
+                    返回
+                  </button>
+                  <button
+                    className="notice-continue"
+                    type="button"
+                    autoFocus
+                    onClick={() => setBookingStep("form")}
+                  >
+                    我明白並繼續
+                  </button>
+                </div>
+              </>
+            )}
+
+            {bookingStep === "form" && (
+              <form onSubmit={submitBooking}>
+                <div className="notice-icon form-icon" aria-hidden="true">人</div>
+                <h2 id="booking-notice-title">填寫預約資料</h2>
+                <div className="selected-session" aria-label="已選擇的課堂">
+                  <span>預約課堂</span>
+                  <strong>{selectedSlot.dateTime}</strong>
+                </div>
+
+                <div className="booking-fields">
+                  <label>
+                    <span>姓名</span>
+                    <input
+                      name="name"
+                      autoComplete="name"
+                      value={bookingForm.name}
+                      onChange={(event) => setBookingForm((current) => ({ ...current, name: event.target.value }))}
+                      maxLength={80}
+                      required
+                      autoFocus
+                    />
+                  </label>
+                  <label>
+                    <span>聯絡電話</span>
+                    <input
+                      name="phone"
+                      type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel"
+                      value={bookingForm.phone}
+                      onChange={(event) => setBookingForm((current) => ({ ...current, phone: event.target.value }))}
+                      placeholder="8 位數字"
+                      maxLength={30}
+                      required
+                    />
+                  </label>
+                  <label>
+                    <span>PHYA 號碼</span>
+                    <input
+                      name="phya"
+                      autoCapitalize="characters"
+                      value={bookingForm.phya}
+                      onChange={(event) => setBookingForm((current) => ({ ...current, phya: event.target.value }))}
+                      placeholder="例如：PHYA26175957"
+                      maxLength={30}
+                      required
+                    />
+                  </label>
+                </div>
+
+                {bookingError && <div className="booking-error" role="alert">{bookingError}</div>}
+
+                <p className="form-rule-note">系統會檢查您是否已有尚未完結的課堂。</p>
+                <div className="notice-actions">
+                  <button className="notice-back" type="button" onClick={() => setBookingStep("notice")} disabled={submitting}>
+                    返回
+                  </button>
+                  <button className="notice-continue" type="submit" disabled={submitting}>
+                    {submitting ? "正在檢查…" : "提交申請"}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {bookingStep === "success" && (
+              <>
+                <div className="notice-icon success-icon" aria-hidden="true">✓</div>
+                <h2 id="booking-notice-title">已收到您的申請</h2>
+                <p className="notice-lead">您的資料已成功提交。</p>
+                <p>
+                  此申請並不代表預約已確認。申請成功後，您將透過 <strong>HA Go</strong> 收到正式預約通知。
+                </p>
+                <p>如未收到 HA Go 通知，請勿視作預約成功。</p>
+                <div className="notice-actions">
+                  <button className="notice-continue" type="button" onClick={closeBooking} autoFocus>
+                    完成
+                  </button>
+                </div>
+              </>
+            )}
           </section>
         </div>
       )}
