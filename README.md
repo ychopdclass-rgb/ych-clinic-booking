@@ -1,7 +1,7 @@
 # YCH Clinic Booking
 
-An open-source, mobile-friendly booking page for showing live class vacancies
-from Google Sheets and sending visitors to a prefilled Google Form.
+An open-source, mobile-friendly booking page for showing live class vacancies,
+accepting patient applications, and preventing overlapping active bookings.
 
 [View the public demo](https://ych-back-class-booking.tony1226.chatgpt.site/)
 
@@ -10,7 +10,9 @@ from Google Sheets and sending visitors to a prefilled Google Form.
 - reads live availability from a public Google Sheet
 - refreshes available slots every 15 seconds
 - hides full or manually closed slots
-- opens a Google Form with the selected date and time already filled in
+- collects the patient's name, phone number, and PHYA number on the website
+- allows only one active booking per PHYA number until the booked one-hour lesson ends
+- writes accepted bookings into the existing Google Form response sheet
 - works without visitor accounts or ChatGPT sign-in
 - runs as a Next.js-compatible app on vinext and Cloudflare Workers
 
@@ -18,12 +20,13 @@ from Google Sheets and sending visitors to a prefilled Google Form.
 
 1. Staff maintains class rows in the `課堂資料` sheet.
 2. The app reads the sheet through Google's read-only Visualization API.
-3. A visitor selects an available slot and completes the prefilled Google Form.
-4. The form response sheet increases `Currently Booked` with a `COUNTIF` formula.
-5. When `Spaces Remaining` becomes zero, the app stops showing that slot.
+3. A visitor selects an available slot and completes the website booking form.
+4. A private Google Apps Script endpoint checks for another active PHYA booking, checks capacity again, and writes an accepted booking into the form response sheet.
+5. The form response sheet increases `Currently Booked` with its existing formula.
+6. When `Spaces Remaining` becomes zero, the app stops accepting that slot.
 
-No booking write API or service-account credential is required. Google Forms
-records the response and Google Sheets formulas update availability.
+No service-account credential or paid database is required. Google Apps Script
+writes the response and the existing Google Sheets formulas update availability.
 
 ## Google Sheet setup
 
@@ -39,7 +42,9 @@ Create a tab named `課堂資料` with these columns in row 1:
 | F | Record ID | back-2026-08-12-1000 |
 | G | Form Link | prefilled form formula below |
 
-Connect the Google Form to a response tab in the same spreadsheet. If the
+Connect the Google Form to a response tab in the same spreadsheet. The website
+continues to use that response tab so existing formulas and records remain
+compatible. If the
 selected time is saved in column E of a response tab named `預約紀錄1`, use:
 
 ```gs
@@ -85,9 +90,13 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Put your spreadsheet ID and tab name in `.env.local`. The spreadsheet ID is the
+Put your spreadsheet ID, tab name, and deployed Apps Script web-app URL in
+`.env.local`. The spreadsheet ID is the
 text between `/d/` and `/edit` in its Google Sheets URL. The included defaults
-power the public demo, so the app also works immediately after cloning.
+power the read-only slot list. Copy `google-apps-script/Code.gs` into an Apps
+Script project owned by the spreadsheet owner, deploy it as a web app that
+executes as the owner, and keep its `/exec` URL private in
+`BOOKING_SCRIPT_URL`.
 
 Before publishing a fork, replace the demo branding and fallback Sheet ID in
 `app/api/slots/route.ts`.
@@ -139,10 +148,9 @@ npm run deploy:cloudflare # build and deploy with Wrangler
 
 ## Security and booking limits
 
-This lightweight design is appropriate for small classes but does not provide an
-atomic seat lock. Two people submitting the final place at the same moment can
-both reach the form before the sheet refreshes. For strict capacity enforcement,
-replace the Google Form flow with a server-side booking transaction and database.
+The Apps Script transaction uses `LockService` to recheck active PHYA bookings
+and capacity immediately before writing a response. The Apps Script URL is a
+private server-side setting and must not be exposed as a `NEXT_PUBLIC_` value.
 
 ## License
 
